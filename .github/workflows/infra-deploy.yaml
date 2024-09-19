@@ -1,0 +1,28 @@
+name: terraform deploy
+
+on:
+  push:
+    branches:
+      - main  
+    paths:
+      - 'terraform/**'  
+      - '.github/workflows/infra-deploy-ru.yaml'
+      - '.github/workflows/infra-deploy.yaml'
+  workflow_dispatch:
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  call-build-infra:
+    uses: ./.github/workflows/infra-deploy-ru.yaml
+    with:
+      aws-region: us-west-2
+      gitops-bot-app-id: ${{ vars.GITOPS_BOT_APP_ID }}
+      terraform-directory: terraform
+      var-file: dev.tfvars
+      role-to-assume: arn:aws:iam::670912381891:role/ecr-digitify-role
+    secrets:
+      GITOPS_BOT_PRIVATE_KEY: ${{ secrets.GITOPS_BOT_PRIVATE_KEY }}
+
+#test

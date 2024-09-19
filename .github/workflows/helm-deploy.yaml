@@ -1,0 +1,22 @@
+name: helm deploy
+
+on:
+  push:
+    branches:
+      - main  
+    paths:
+      - 'helm/digitify/values.yaml'  # Trigger only if this file is modified
+  workflow_dispatch:
+permissions:
+  id-token: write
+  contents: read
+  
+jobs:
+  call-build-and-deploy:
+    uses: ./.github/workflows/helm-deploy-ru.yaml
+    with:
+      aws-region: us-west-2
+      eks-cluster-name: custom-eks-cluster
+      helm-release-name: digitify-release
+      helm-namespace: digitify
+      role-to-assume: arn:aws:iam::670912381891:role/ecr-digitify-role

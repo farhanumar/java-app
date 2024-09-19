@@ -1,0 +1,30 @@
+name: Build and Push Docker Image
+
+on:
+  push:
+    branches:
+      - main  
+  pull_request:
+    branches:
+      - main 
+    paths:
+      - 'helm/**'  
+      - 'Dockerfile'
+      - 'src/**'
+      - '.github/workflows/image-build-ru.yaml'
+      - '.github/workflows/image-build.yaml'
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  call-build-image:
+    if: ${{ !contains(github.event.head_commit.message, '#ignore-build') && github.actor != 'digitify-test[bot]' }}  
+    uses: ./.github/workflows/image-build-ru.yaml
+    with:
+      aws-region: us-west-2
+      ecr-repository: digitify
+      gitops-bot-app-id: ${{ vars.GITOPS_BOT_APP_ID }}
+      role-to-assume: arn:aws:iam::670912381891:role/ecr-digitify-role
+    secrets: 
+      gitops-bot-private-key: ${{ secrets.GITOPS_BOT_PRIVATE_KEY }}

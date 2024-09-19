@@ -1,0 +1,89 @@
+name: Build and Push Docker Image - Resuable
+
+on:
+  workflow_call:
+    inputs:
+      aws-region:
+        required: true
+        type: string
+      ecr-repository:
+        required: true
+        type: string
+      gitops-bot-app-id:
+        required: true
+        type: string
+      role-to-assume:
+        required: true
+        type: string
+
+    secrets:
+      gitops-bot-private-key:
+        required: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Show GitHub context
+        env:
+         GITHUB_CONTEXT: ${{ toJson(github) }}
+        run: echo "$GITHUB_CONTEXT"
+
+      - name: Generate a token
+        id: generate-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ inputs.gitops-bot-app-id }}
+          private-key: ${{ secrets.gitops-bot-private-key }}
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+          token: ${{ steps.generate-token.outputs.token }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Get short Git SHA
+        id: vars
+        run: echo "GIT_SHA=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_ENV
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ inputs.role-to-assume }}
+          role-session-name: push-to-ecr
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push image to Amazon ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ env.GIT_SHA }}
+        run: |
+          docker build -t $ECR_REGISTRY/${{ inputs.ecr-repository }}:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/${{ inputs.ecr-repository }}:$IMAGE_TAG
+          echo "image=$ECR_REGISTRY/${{ inputs.ecr-repository }}:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Create Branch
+        run: git checkout -b release/${{ env.GIT_SHA }}
+            
+      - name: Commit values.yaml to release/${{ env.GIT_SHA }} branch
+        env:
+          GH_TOKEN: ${{ steps.generate-token.outputs.token }}
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          sed -i "s/tag: .*/tag: '${{ env.GIT_SHA }}'/" helm/digitify/values.yaml
+          git add helm/digitify/values.yaml
+          git status
+          git commit -m "Update tag ${{ env.GIT_SHA }} in values.yaml for branch"
+          git push origin release/${{ env.GIT_SHA }}
+          gh pr create -B main -H release/${{ env.GIT_SHA }} --title 'Update image tag in values file' --body 'Created by Github action'

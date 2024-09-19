@@ -1,0 +1,78 @@
+name: helm deploy resubale
+
+on:
+  workflow_call:
+    inputs:
+      aws-region:
+        required: true
+        type: string
+      role-to-assume:
+        required: true
+        type: string
+      eks-cluster-name:
+        required: true
+        type: string
+      helm-release-name:
+        required: true
+        type: string
+      helm-namespace:
+        required: true
+        type: string
+
+jobs:
+  build_and_deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Checkout the repository
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install awscliv2
+
+      # Step 2: Install kubectl
+      - name: Install kubectl
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x ./kubectl
+          sudo mv ./kubectl /usr/local/bin/kubectl
+          kubectl version --client
+
+      # Step 3: Install Helm
+      - name: Install Helm
+        run: |
+          curl -L https://get.helm.sh/helm-v3.7.0-linux-amd64.tar.gz -o helm.tar.gz
+          tar -zxvf helm.tar.gz
+          sudo mv linux-amd64/helm /usr/local/bin/helm
+          helm version
+
+      # Step 4: Configure AWS credentials and assume role
+      - name: Configure AWS credentials
+        id: aws-creds
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ inputs.role-to-assume }}
+          role-session-name: push-to-ecr
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: Sts GetCallerIdentity
+        run: |
+          aws sts get-caller-identity
+
+      - name: kubeconfig
+        run: |
+          aws eks update-kubeconfig --name ${{ inputs.eks-cluster-name }} --region ${{ inputs.aws-region }}
+
+      # Step 7: Test kubectl connection
+      - name: Test kubectl connection
+        run: |
+          kubectl get nodes
+
+      # Step 8: Use Helm to Deploy or Upgrade
+      - name: Helm Deploy or Upgrade
+        run: |
+          helm upgrade --install ${{ inputs.helm-release-name }} ./helm/digitify --namespace ${{ inputs.helm-namespace }} --create-namespace
+
